@@ -1,6 +1,6 @@
-#include <Arduino_GFX_Library.h>
-#include <Wire.h>
-#include "TCA9554.h"
+#include <Arduino_GFX_Library.h> // for display
+#include <Wire.h> // ic2 communication
+#include "TCA9554.h" // rester:  the I/O expander that resets the LCD on startup (without it, the screen won't initialize)
 
 // ---------------------------------------------------------------
 // Display Hardware
@@ -13,7 +13,15 @@ Arduino_Canvas *gfx = new Arduino_Canvas(320, 480, g, 0, 0, 0);
 // ---------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------
-float weakThreshold = 0.05;
+
+/*
+ranges are:
+Nothing: less than 0.3 PSI drop (ignored)
+Weak: 0.3 to 0.79 PSI drop
+Moderate: 0.8 to 1.49 PSI drop
+Strong: 1.5+ PSI drop
+*/
+float weakThreshold = 0.05; 
 float moderateThreshold = 0.2;
 float strongThreshold = 0.5;
 unsigned long waitTime = 60000;     // 60 seconds
@@ -22,20 +30,33 @@ unsigned long readingTime = 10000;  // 10 seconds
 // ---------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------
-float baselinePsi = 0;
+float baselinePsi = 0; // stores average room temp
 
 // ---------------------------------------------------------------
 // Screen Helpers
 // ---------------------------------------------------------------
 
+/*
+Cleans up screen.
+*/
 void clearScreen() {
   gfx->fillScreen(0x0000);
 }
 
+/*
+Pushed buffer to update screen with view.
+*/
 void updateScreen() {
-  gfx->flush();
+  gfx->flush(); 
 }
 
+/*
+Draw to screen center, could be changed to horizontal
+for changes vertical:
+0 = vertical (portrait), 1 = horizontal (landscape)
+Arduino_Canvas *gfx = new Arduino_Canvas(480, 320, g, 0, 0, 1);
+and update gfx->setCursor((480 - w) / 2, y);
+*/
 void drawCentered(String text, int y, int size, int color) {
   gfx->setTextSize(size);
   gfx->setTextColor(color);
