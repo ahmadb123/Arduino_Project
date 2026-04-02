@@ -148,8 +148,8 @@ unsigned long readingTime = 10000; // measurement window (ms)
 
 ## Contact
 - **Authors**: Ahmad Bishara, Allison Barreto-Portiilo
-- **Email**: [bishara.a@northeastern.edu](mailto:bishara.a@northeastern.edu)
-[barreto-portillo.a@northeastern.edu] (mailto:barreto-portillo.a@northeastern.edu)
+- **Email**: [bishara.a@northeastern.edu](mailto:bishara.a@northeastern.edu)  
+- **Email**: [barreto-portillo.a@northeastern.edu](mailto:barreto-portillo.a@northeastern.edu)
 - **GitHub**: [ahmadb123](https://github.com/ahmadb123)  
 
 ---
