@@ -41,7 +41,7 @@ static const char *TAG = "pressure_monitor";
 // ---------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------
-float weakThreshold = 0.003;
+float weakThreshold = 0.005;
 float moderateThreshold = 0.01;
 float strongThreshold = 0.02;
 // Scale raw (spacer-attenuated) readings to the equivalent direct-tube PSI
@@ -58,6 +58,7 @@ int dispalySleepyFace = 1;          // only display the 60 seconds attempt once.
 // ---------------------------------------------------------------
 float baselinePsi = 0;
 int failCount = 0;
+int successCount = 0;  // strong inhales in this session; 2 = all done
 
 // ---------------------------------------------------------------
 // ES8311 Codec Init (from Waveshare demo)
@@ -258,10 +259,11 @@ int getColor(String level) {
 
 void showReady() {
   clearScreen();
-  drawCentered("PRESSURE MONITOR", 15, 2, 0xFFFF);
-  drawHappyFace(240, 140, 55);
-  drawCentered("Ready!", 215, 3, 0xC618);
-  drawCentered("Take a deep breath!", 260, 2, 0x7BEF);
+  drawCentered("Breathing Buddy", 15, 2, 0xFFFF);
+  drawHappyFace(240, 135, 50);
+  drawCentered("Ready!", 195, 3, 0xC618);
+  drawCentered("Make sure to shake your inhaler.", 238, 2, 0xFFFF);
+  drawCentered("Take a deep breath!", 268, 2, 0x7BEF);
   updateScreen();
 }
 
@@ -352,7 +354,7 @@ void showWaiting(int secondsLeft) {
   char timeText[32];
   snprintf(timeText, sizeof(timeText), "%d s", secondsLeft);
   drawCentered(String(timeText), 260, 3, 0xFFFF);
-  drawCentered("Sailing across!", 295, 2, 0x7BEF);
+  drawCentered("Hold your breath !", 295, 2, 0xFFFF);
 
   updateScreen();
 }
@@ -368,11 +370,10 @@ void showTryAgain() {
 void showAlert() {
   clearScreen();
   gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0xF800);  // full red background
-  drawCentered("ALERT!", 20, 4, 0xFFFF);
-  drawSadFace(240, 140, 50);
-  drawCentered("Take another", 210, 3, 0xFFFF);
-  drawCentered("Ask for help!", 250, 2, 0xFFFF);
-  drawCentered("3 failed attempts ", 285, 2, 0xFFE0);
+  drawCentered("ALERT!", 15, 4, 0xFFFF);
+  drawSadFace(240, 115, 45);
+  drawCentered("Go get help now!", 180, 3, 0xFFE0);
+  drawCentered("3 failed attempts", 290, 2, 0xFFE0);
   updateScreen();
 }
 
@@ -444,9 +445,19 @@ void showTimeToTest() {
   gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0x04BF);  // bright blue background
   drawCentered("WAKE UP!", 20, 3, 0xFFFF);
   drawHappyFace(240, 130, 50);
-  drawCentered("Time to test", 195, 3, 0xFFE0);
-  drawCentered("again!", 230, 3, 0xFFE0);
+  drawCentered("Get ready to breath again!", 195, 3, 0xFFE0);
   drawCentered("Take a deep breath!", 285, 2, 0xFFFF);
+  updateScreen();
+}
+
+void showAllDone() {
+  clearScreen();
+  gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0x0640);  // deep green background
+  drawCentered("ALL DONE!", 20, 3, 0xFFE0);
+  drawHappyFace(240, 130, 50);
+  drawCentered("Great job!", 195, 3, 0xFFFF);
+  drawCentered("You're good to go.", 245, 2, 0xFFFF);
+  drawCentered("Turn off your breathing buddy!", 285, 2, 0xFFE0);
   updateScreen();
 }
 
@@ -568,6 +579,7 @@ void loop() {
   if (finalLevel == "STRONG") {
     // SUCCESS — medication taken!
     failCount = 0;
+    successCount++;
     playHappySound();
 
     // Phase 1: Hold breath — boat sails across (10 seconds)
@@ -579,13 +591,22 @@ void loop() {
     // Boat arrived! Transition beep
     playHappySound();
 
-    // Phase 2: Relax — night sky with sleeping face (60 seconds)
+    if (successCount >= 2) {
+      // Second successful dose — we're done. No relax, just celebrate and halt.
+      showAllDone();
+      playHappySound();
+      while (true) {
+        delay(1000);
+      }
+    }
+
+    // First successful dose — relax for 60s, then wake up for the second test.
     for (int i = relaxTime / 1000; i > 0; i--) {
       showRelaxing(i);
       delay(1000);
     }
 
-    // Time's up! Wake up alarm
+    // Time's up — prompt for the second dose.
     showTimeToTest();
     playAlarmSound();
     delay(5000);
