@@ -10,6 +10,11 @@
 // ---------------------------------------------------------------
 // Display Hardware
 // ---------------------------------------------------------------
+// Panel driven natively in portrait (320x480); Canvas is rotated in
+// software to landscape (480x320) via gfx->setRotation(1) in setup().
+// Hardware rotation is unreliable on this AXS15231B QSPI panel.
+#define SCREEN_W 480
+#define SCREEN_H 320
 TCA9554 TCA(0x20);
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(12, 5, 1, 2, 3, 4);
 Arduino_GFX *g = new Arduino_AXS15231B(bus, -1, 0, false, 320, 480);
@@ -19,16 +24,16 @@ Arduino_Canvas *gfx = new Arduino_Canvas(320, 480, g, 0, 0, 0);
 // Audio Hardware — Waveshare ESP32-S3-Touch-LCD-3.5B
 // Pins from official demo: 04_es8311_example
 // ---------------------------------------------------------------
-#define I2S_MCK_PIN   44
-#define I2S_BCK_PIN   13
-#define I2S_LRCK_PIN  15
-#define I2S_DOUT_PIN  16
-#define I2S_DIN_PIN   14
+#define I2S_MCK_PIN 44
+#define I2S_BCK_PIN 13
+#define I2S_LRCK_PIN 15
+#define I2S_DOUT_PIN 16
+#define I2S_DIN_PIN 14
 
-#define AUDIO_RATE       16000
-#define MCLK_MULTIPLE    256
-#define MCLK_FREQ_HZ    (AUDIO_RATE * MCLK_MULTIPLE)
-#define AUDIO_VOLUME     75
+#define AUDIO_RATE 16000
+#define MCLK_MULTIPLE 256
+#define MCLK_FREQ_HZ (AUDIO_RATE * MCLK_MULTIPLE)
+#define AUDIO_VOLUME 75
 
 I2SClass i2s;
 static const char *TAG = "pressure_monitor";
@@ -36,9 +41,12 @@ static const char *TAG = "pressure_monitor";
 // ---------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------
-float weakThreshold = 0.05;
-float moderateThreshold = 0.2;
-float strongThreshold = 0.5;
+float weakThreshold = 0.003;
+float moderateThreshold = 0.01;
+float strongThreshold = 0.02;
+// Scale raw (spacer-attenuated) readings to the equivalent direct-tube PSI
+// for display only. 0.02 raw * 25 = 0.50 PSI shown.
+const float DISPLAY_SCALE = 25.0;
 unsigned long holdTime = 10000;     // 10 seconds hold breath (boat)
 unsigned long relaxTime = 60000;    // 60 seconds relax before next test
 unsigned long readingTime = 10000;  // 10 seconds max to measure each inhale
@@ -90,7 +98,7 @@ void drawCentered(String text, int y, int size, int color) {
   int x1, y1;
   unsigned int w, h;
   gfx->getTextBounds(text.c_str(), 0, 0, (int16_t *)&x1, (int16_t *)&y1, (uint16_t *)&w, (uint16_t *)&h);
-  gfx->setCursor((320 - w) / 2, y);
+  gfx->setCursor((SCREEN_W - w) / 2, y);
   gfx->print(text);
 }
 
@@ -135,7 +143,7 @@ void drawMehFace(int cx, int cy, int r) {
 
 void playTone(int freq, int duration_ms) {
   int totalSamples = AUDIO_RATE * duration_ms / 1000;
-  int16_t samples[2]; // stereo: L + R
+  int16_t samples[2];  // stereo: L + R
 
   for (int i = 0; i < totalSamples; i++) {
     int16_t s = (int16_t)(sin(2.0 * PI * freq * i / (float)AUDIO_RATE) * 15000);
@@ -161,9 +169,9 @@ void playHappySound() {
   playTone(659, 100);  // E5
   playTone(784, 150);  // G5
   delay(50);
-  playTone(784, 100);  // G5
-  playTone(880, 150);  // A5
-  playTone(1047, 400); // C6 (big high finish!)
+  playTone(784, 100);   // G5
+  playTone(880, 150);   // A5
+  playTone(1047, 400);  // C6 (big high finish!)
 }
 
 /*
@@ -193,10 +201,10 @@ Alarm sound: loud urgent repeating siren (get help / try medication again)
 */
 void playAlarmSound() {
   for (int i = 0; i < 3; i++) {
-    playTone(880, 200);   // high
-    playTone(660, 200);   // low
+    playTone(880, 200);  // high
+    playTone(660, 200);  // low
   }
-  playTone(880, 400);     // long high finish
+  playTone(880, 400);  // long high finish
 }
 
 // ---------------------------------------------------------------
@@ -250,30 +258,30 @@ int getColor(String level) {
 
 void showReady() {
   clearScreen();
-  drawCentered("PRESSURE MONITOR", 30, 2, 0xFFFF);
-  drawHappyFace(160, 200, 70);
-  drawCentered("Ready!", 310, 3, 0xC618);
-  drawCentered("Take a deep breath!", 370, 2, 0x7BEF);
+  drawCentered("PRESSURE MONITOR", 15, 2, 0xFFFF);
+  drawHappyFace(240, 140, 55);
+  drawCentered("Ready!", 215, 3, 0xC618);
+  drawCentered("Take a deep breath!", 260, 2, 0x7BEF);
   updateScreen();
 }
 
 void showResult(String level, float drop) {
   int color = getColor(level);
   clearScreen();
-  gfx->fillRect(0, 0, 320, 60, color);
-  drawCentered(level, 20, 3, 0x0000);
+  gfx->fillRect(0, 0, SCREEN_W, 45, color);
+  drawCentered(level, 10, 3, 0x0000);
   char psiText[32];
-  snprintf(psiText, sizeof(psiText), "%.2f PSI", drop);
-  drawCentered(String(psiText), 100, 3, color);
+  snprintf(psiText, sizeof(psiText), "%.2f PSI", drop * DISPLAY_SCALE);
+  drawCentered(String(psiText), 65, 3, color);
   if (level == "STRONG") {
-    drawHappyFace(160, 280, 70);
-    drawCentered("Great job!", 380, 2, 0x07E0);
+    drawHappyFace(240, 180, 50);
+    drawCentered("Great job!", 270, 2, 0x07E0);
   } else if (level == "MODERATE") {
-    drawMehFace(160, 280, 70);
-    drawCentered("Almost there!", 380, 2, 0xFD20);
+    drawMehFace(240, 180, 50);
+    drawCentered("Almost there!", 270, 2, 0xFD20);
   } else {
-    drawSadFace(160, 280, 70);
-    drawCentered("Try harder!", 380, 2, 0xF800);
+    drawSadFace(240, 180, 50);
+    drawCentered("Try harder!", 270, 2, 0xF800);
   }
   updateScreen();
 }
@@ -297,74 +305,74 @@ void showWaiting(int secondsLeft) {
   float progress = (float)(totalSeconds - secondsLeft) / (float)totalSeconds;
   clearScreen();
 
-  // Sky (dark blue-black background is fine)
-  drawCentered("Great job!", 15, 2, 0x07E0);
+  drawCentered("Great job!", 10, 2, 0x07E0);
 
-  // Sun in top right
-  gfx->fillCircle(280, 60, 25, 0xFFE0);
+  // Sun top right
+  gfx->fillCircle(430, 45, 22, 0xFFE0);
+
+  // River bounds
+  int riverTop = 70;
+  int riverBot = 240;
+  int riverH = riverBot - riverTop;
 
   // Left bank (green with grass)
-  int riverTop = 100;
-  int riverBot = 370;
-  int riverH = riverBot - riverTop;
-  gfx->fillRect(0, riverTop, 45, riverH, 0x2C84);
-  // Grass tufts
+  gfx->fillRect(0, riverTop, 50, riverH, 0x2C84);
   for (int gy = riverTop + 10; gy < riverBot; gy += 25) {
     gfx->fillTriangle(10, gy, 15, gy - 12, 20, gy, 0x3E08);
     gfx->fillTriangle(25, gy, 30, gy - 10, 35, gy, 0x3E08);
   }
 
-  // Water (blue)
-  gfx->fillRect(45, riverTop, 230, riverH, 0x04BF);
+  // Water
+  gfx->fillRect(50, riverTop, 380, riverH, 0x04BF);
 
   // Waves
   for (int wy = riverTop + 30; wy < riverBot; wy += 35) {
-    for (int wx = 55; wx < 265; wx += 40) {
+    for (int wx = 60; wx < 425; wx += 40) {
       gfx->drawLine(wx, wy, wx + 8, wy - 4, 0x07FF);
       gfx->drawLine(wx + 8, wy - 4, wx + 16, wy, 0x07FF);
     }
   }
 
-  // Right bank (green with finish flag)
-  gfx->fillRect(275, riverTop, 45, riverH, 0x2C84);
+  // Right bank with grass
+  gfx->fillRect(430, riverTop, 50, riverH, 0x2C84);
   for (int gy = riverTop + 15; gy < riverBot; gy += 25) {
-    gfx->fillTriangle(285, gy, 290, gy - 12, 295, gy, 0x3E08);
-    gfx->fillTriangle(300, gy, 305, gy - 10, 310, gy, 0x3E08);
+    gfx->fillTriangle(440, gy, 445, gy - 12, 450, gy, 0x3E08);
+    gfx->fillTriangle(455, gy, 460, gy - 10, 465, gy, 0x3E08);
   }
   // Finish flag
-  gfx->fillRect(288, riverTop + 5, 3, 35, 0xFFFF);
-  gfx->fillRect(291, riverTop + 5, 18, 12, 0x07E0);
+  gfx->fillRect(443, riverTop + 5, 3, 35, 0xFFFF);
+  gfx->fillRect(446, riverTop + 5, 18, 12, 0x07E0);
 
-  // Boat position (sails left to right)
-  int boatX = 70 + (int)(progress * 190);
+  // Boat sails left to right across the wider landscape river
+  int boatX = 75 + (int)(progress * 340);
   int boatY = (riverTop + riverBot) / 2;
   drawBoat(boatX, boatY);
 
   // Countdown
   char timeText[32];
   snprintf(timeText, sizeof(timeText), "%d s", secondsLeft);
-  drawCentered(String(timeText), 395, 3, 0xFFFF);
-  drawCentered("Sailing across!", 440, 2, 0x7BEF);
+  drawCentered(String(timeText), 260, 3, 0xFFFF);
+  drawCentered("Sailing across!", 295, 2, 0x7BEF);
 
   updateScreen();
 }
 
 void showTryAgain() {
   clearScreen();
-  drawCentered("NOT STRONG ENOUGH", 30, 2, 0xF800);
-  drawSadFace(160, 200, 70);
-  drawCentered("Try again...", 320, 3, 0xFFFF);
+  drawCentered("NOT STRONG ENOUGH", 20, 2, 0xF800);
+  drawSadFace(240, 140, 55);
+  drawCentered("Try again...", 225, 3, 0xFFFF);
   updateScreen();
 }
 
 void showAlert() {
   clearScreen();
-  gfx->fillRect(0, 0, 320, 480, 0xF800);  // full red background
-  drawCentered("ALERT!", 40, 4, 0xFFFF);
-  drawSadFace(160, 200, 70);
-  drawCentered("Take another", 310, 3, 0xFFFF);
-  drawCentered("Ask for help!", 360, 2, 0xFFFF);
-  drawCentered("3 failed attempts ", 420, 2, 0xFFE0);
+  gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0xF800);  // full red background
+  drawCentered("ALERT!", 20, 4, 0xFFFF);
+  drawSadFace(240, 140, 50);
+  drawCentered("Take another", 210, 3, 0xFFFF);
+  drawCentered("Ask for help!", 250, 2, 0xFFFF);
+  drawCentered("3 failed attempts ", 285, 2, 0xFFE0);
   updateScreen();
 }
 
@@ -374,17 +382,17 @@ void showRelaxing(int secondsLeft) {
   clearScreen();
 
   // Night sky background
-  gfx->fillRect(0, 0, 320, 480, 0x0008);  // very dark blue
+  gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0x0008);  // very dark blue
 
   // Moon (top right)
-  gfx->fillCircle(270, 60, 30, 0xFFE0);    // yellow moon
-  gfx->fillCircle(280, 50, 25, 0x0008);    // shadow to make crescent
+  gfx->fillCircle(420, 45, 28, 0xFFE0);  // yellow moon
+  gfx->fillCircle(430, 35, 24, 0x0008);  // shadow to make crescent
 
   // Stars appear progressively as time passes
   int numStars = (int)(progress * 20);
-  // Fixed star positions so they don't jump around
-  int starX[] = {30, 80, 150, 200, 50, 130, 250, 180, 60, 290, 110, 230, 40, 170, 300, 90, 210, 140, 260, 70};
-  int starY[] = {40, 25, 50, 35, 90, 70, 45, 95, 130, 80, 110, 60, 160, 140, 120, 180, 150, 30, 100, 55};
+  // Fixed star positions across the top band of the landscape screen
+  int starX[] = { 30, 80, 150, 200, 50, 300, 370, 180, 60, 290, 110, 400, 40, 170, 460, 90, 210, 140, 260, 70 };
+  int starY[] = { 30, 20, 40, 28, 70, 55, 35, 75, 100, 60, 85, 45, 120, 110, 90, 130, 115, 22, 80, 42 };
   for (int i = 0; i < numStars && i < 20; i++) {
     gfx->fillCircle(starX[i], starY[i], 2, 0xFFFF);
     // Twinkle rays on some stars
@@ -395,50 +403,50 @@ void showRelaxing(int secondsLeft) {
   }
 
   // Sleeping happy face
-  gfx->fillCircle(160, 270, 60, 0xFFE0);   // yellow face
+  gfx->fillCircle(240, 175, 50, 0xFFE0);  // yellow face
   // Closed eyes (horizontal lines instead of dots)
-  gfx->fillRect(130, 255, 16, 3, 0x0000);  // left eye closed
-  gfx->fillRect(174, 255, 16, 3, 0x0000);  // right eye closed
+  gfx->fillRect(213, 162, 14, 3, 0x0000);  // left eye closed
+  gfx->fillRect(253, 162, 14, 3, 0x0000);  // right eye closed
   // Peaceful smile
   for (int a = 30; a <= 150; a += 4) {
     float rad = a * 3.14159 / 180.0;
-    int x = 160 + cos(rad) * 25;
-    int y = 278 + sin(rad) * 15;
+    int x = 240 + cos(rad) * 22;
+    int y = 183 + sin(rad) * 13;
     gfx->fillCircle(x, y, 2, 0x0000);
   }
 
   // ZZZ floating up
   gfx->setTextSize(3);
   gfx->setTextColor(0x7BEF);
-  gfx->setCursor(215, 220);
+  gfx->setCursor(295, 130);
   gfx->print("Z");
   gfx->setTextSize(2);
-  gfx->setCursor(235, 200);
+  gfx->setCursor(315, 110);
   gfx->print("z");
   gfx->setTextSize(1);
-  gfx->setCursor(250, 188);
+  gfx->setCursor(330, 98);
   gfx->print("z");
 
   // Relax message
-  drawCentered("Relax...", 370, 3, 0x7BEF);
+  drawCentered("Relax...", 235, 3, 0x7BEF);
 
   // Countdown
   char timeText[32];
   snprintf(timeText, sizeof(timeText), "%d s", secondsLeft);
-  drawCentered(String(timeText), 420, 3, 0xC618);
-  drawCentered("Next test soon!", 460, 2, 0x7BEF);
+  drawCentered(String(timeText), 270, 3, 0xC618);
+  drawCentered("Next test soon!", 302, 2, 0x7BEF);
 
   updateScreen();
 }
 
 void showTimeToTest() {
   clearScreen();
-  gfx->fillRect(0, 0, 320, 480, 0x04BF);  // bright blue background
-  drawCentered("WAKE UP!", 40, 3, 0xFFFF);
-  drawHappyFace(160, 200, 70);
-  drawCentered("Time to test", 310, 3, 0xFFE0);
-  drawCentered("again!", 360, 3, 0xFFE0);
-  drawCentered("Take a deep breath!", 430, 2, 0xFFFF);
+  gfx->fillRect(0, 0, SCREEN_W, SCREEN_H, 0x04BF);  // bright blue background
+  drawCentered("WAKE UP!", 20, 3, 0xFFFF);
+  drawHappyFace(240, 130, 50);
+  drawCentered("Time to test", 195, 3, 0xFFE0);
+  drawCentered("again!", 230, 3, 0xFFE0);
+  drawCentered("Take a deep breath!", 285, 2, 0xFFFF);
   updateScreen();
 }
 
@@ -479,6 +487,7 @@ void setup() {
   TCA.write1(1, 1);
   delay(200);
   gfx->begin();
+  gfx->setRotation(1);  // rotate canvas drawing space to landscape 480x320
   clearScreen();
   pinMode(6, OUTPUT);
   digitalWrite(6, HIGH);
@@ -486,7 +495,7 @@ void setup() {
 
   // ---- Step 5: Calibrate pressure sensor ----
   clearScreen();
-  drawCentered("Calibrating...", 200, 2, 0xFFFF);
+  drawCentered("Calibrating...", 150, 2, 0xFFFF);
   updateScreen();
 
   float sum = 0;
